@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}История — TG Source Radar{% endblock %}
+{% block content %}
+<h1>История поисков</h1>
+
+{% if queries %}
+<table>
+    <thead>
+        <tr>
+            <th>Дата</th>
+            <th>Тема</th>
+            <th>Статус</th>
+            <th>Найдено</th>
+            <th>Оценено</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for q in queries %}
+        <tr>
+            <td style="white-space:nowrap; font-size:13px; color:#aaa;">
+                {{ q.created_at.strftime('%d.%m.%Y %H:%M') if q.created_at else '—' }}
+            </td>
+            <td><strong>{{ q.topic }}</strong></td>
+            <td><span class="status status-{{ q.status }}">{{ q.status }}</span></td>
+            <td>{{ q.total_found or 0 }}</td>
+            <td>{{ q.total_scored or 0 }}</td>
+            <td>
+                <a href="/results/{{ q.id }}">Результаты</a>
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="empty">
+    <p>Пока нет ни одного поиска.</p>
+    <div style="margin-top:16px;">
+        <a href="/" style="padding:10px 24px; border-radius:6px; display:inline-block; background:#7c83ff; color:#fff;">Начать поиск</a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

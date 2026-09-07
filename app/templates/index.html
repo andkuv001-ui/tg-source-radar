@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Поиск — TG Source Radar{% endblock %}
+{% block content %}
+<h1>Поиск Telegram-чатов</h1>
+<div class="card">
+    <form id="searchForm" onsubmit="return handleSubmit(event)">
+        <label for="topic">Тема</label>
+        <input type="text" id="topic" name="topic" placeholder="Стройматериалы оптом" required>
+        <label for="keywords">Ключевые слова (через запятую)</label>
+        <input type="text" id="keywords" name="keywords" placeholder="оптом, поставщик, стройматериалы">
+        <button type="submit" id="submitBtn">Найти чаты</button>
+    </form>
+</div>
+<div id="statusBox" style="display:none;" class="card">
+    <p><span class="spinner"></span> <span id="statusText">Поиск...</span></p>
+</div>
+<script>
+async function handleSubmit(e) {
+    e.preventDefault();
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = 'Поиск...';
+
+    const topic = document.getElementById('topic').value.trim();
+    const keywordsRaw = document.getElementById('keywords').value.trim();
+    const keywords = keywordsRaw ? keywordsRaw.split(',').map(k => k.trim()).filter(Boolean) : [];
+
+    try {
+        const resp = await fetch('/api/search', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({topic, keywords})
+        });
+        const data = await resp.json();
+        const queryId = data.id;
+
+        document.getElementById('statusBox').style.display = 'block';
+        pollStatus(queryId);
+    } catch (err) {
+        alert('Ошибка: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = 'Найти чаты';
+    }
+}
+
+async function pollStatus(queryId) {
+    const statusText = document.getElementById('statusText');
+    while (true) {
+        await new Promise(r => setTimeout(r, 2000));
+        try {
+            const resp = await fetch('/api/status/' + queryId);
+            const data = await resp.json();
+            const s = data.status;
+            if (s === 'searching') {
+                statusText.textContent = 'Поиск чатов в Telegram...';
+            } else if (s === 'evaluating') {
+                statusText.textContent = 'Оценка релевантности (LLM)... Оценено: ' + data.total_scored + ' / ' + data.total_found;
+            } else if (s === 'completed') {
+                window.location.href = '/results/' + queryId;
+                return;
+            } else if (s === 'failed') {
+                statusText.textContent = 'Поиск завершился с ошибкой.';
+                document.getElementById('submitBtn').disabled = false;
+                document.getElementById('submitBtn').textContent = 'Найти чаты';
+                return;
+            }
+        } catch {}
+    }
+}
+</script>
+{% endblock %}

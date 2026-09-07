@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Результаты — TG Source Radar{% endblock %}
+{% block content %}
+<h1>Результаты поиска</h1>
+
+{% if query %}
+<div class="card">
+    <p style="color:#aaa; font-size:13px; margin-bottom:4px;">Тема: <strong style="color:#fff;">{{ query.topic }}</strong></p>
+    <p style="color:#aaa; font-size:13px;">Статус: <span class="status status-{{ query.status }}">{{ query.status }}</span>
+    &nbsp;|&nbsp; Найдено: {{ query.total_found }} &nbsp;|&nbsp; Оценено: {{ query.total_scored }}</p>
+</div>
+{% endif %}
+
+{% if results %}
+<div style="overflow-x:auto;">
+<table>
+    <thead>
+        <tr>
+            <th>Чат</th>
+            <th>Участники</th>
+            <th>Тип</th>
+            <th>Описание</th>
+            <th>Score</th>
+            <th>Категория</th>
+            <th>Ссылка</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for row in results %}
+        {% set score = row.relevance_score|float %}
+        {% if score >= 0.3 %}
+        <tr>
+            <td><strong>{{ row.chat_title or 'Без названия' }}</strong><br>
+                <span style="color:#666; font-size:12px;">{{ row.chat_username and ('@' + row.chat_username) or '' }}</span>
+            </td>
+            <td>{{ row.participants_count or '—' }}</td>
+            <td>
+                {% if row.channel_type == 'discussion' %}
+                    <span class="badge badge-green">Обсуждение</span>
+                {% elif row.channel_type == 'broadcast' %}
+                    <span class="badge badge-blue">Канал</span>
+                {% elif row.channel_type == 'commercial' %}
+                    <span class="badge badge-red">Магазин</span>
+                {% elif row.channel_type == 'mixed' %}
+                    <span class="badge badge-yellow">Смешанный</span>
+                {% else %}
+                    <span class="badge badge-gray">{{ row.channel_type or '—' }}</span>
+                {% endif %}
+            </td>
+            <td style="max-width:300px; font-size:13px; color:#aaa;">
+                {{ (row.chat_description or '')[:120] }}{% if row.chat_description and row.chat_description|length > 120 %}...{% endif %}
+            </td>
+            <td>
+                {% if score >= 0.7 %}
+                    <span class="score score-high">{{ "%.2f"|format(score) }}</span>
+                {% elif score >= 0.4 %}
+                    <span class="score score-mid">{{ "%.2f"|format(score) }}</span>
+                {% else %}
+                    <span class="score score-low">{{ "%.2f"|format(score) }}</span>
+                {% endif %}
+            </td>
+            <td style="font-size:13px;">{{ row.category or '—' }}</td>
+            <td><a href="{{ row.telegram_link }}" target="_blank">Открыть</a></td>
+        </tr>
+        {% endif %}
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+
+{% if query %}
+<div style="margin-top:16px;">
+    <a href="/" class="btn-secondary" style="padding:10px 24px; border-radius:6px; display:inline-block;">Новый поиск</a>
+</div>
+{% endif %}
+
+{% else %}
+<div class="empty">
+    {% if query and query.status == 'completed' %}
+        <p>Чаты не найдены для данного запроса.</p>
+    {% elif query %}
+        <p><span class="spinner"></span> Загрузка результатов...</p>
+    {% else %}
+        <p>Запрос не найден.</p>
+    {% endif %}
+    <div style="margin-top:16px;">
+        <a href="/" class="btn-secondary" style="padding:10px 24px; border-radius:6px; display:inline-block;">Новый поиск</a>
+    </div>
+</div>
+{% endif %}
+
+{% if query and query.status not in ('completed', 'failed') %}
+<script>
+    setTimeout(() => { location.reload(); }, 3000);
+</script>
+{% endif %}
+{% endblock %}

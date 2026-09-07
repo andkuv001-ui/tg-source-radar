@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from telethon import TelegramClient
-from telethon.errors import FloodWaitError
+from telethon.errors import FloodWaitError, AuthKeyDuplicatedError
 from telethon.sessions import StringSession
 from telethon.tl.functions.contacts import SearchRequest
 from telethon.tl.types import (
@@ -55,23 +55,29 @@ async def disconnect() -> None:
         logger.info("Telethon client disconnected")
 
 
-async def search_chats(query: str, limit: int = 50) -> list[dict[str, Any]]:
+async def search_chats(query: str, limit: int = 50, retries: int = 2) -> list[dict[str, Any]]:
     client = get_client()
     if not client.is_connected():
         await connect()
 
     results: list[dict[str, Any]] = []
-    try:
-        response = await client(SearchRequest(q=query, limit=limit))
-        for chat in response.chats:
-            if not isinstance(chat, Channel):
-                continue
-            results.append(_parse_channel(chat))
-    except FloodWaitError as e:
-        logger.warning("FloodWait: sleeping %d seconds", e.seconds)
-        await asyncio.sleep(e.seconds)
-    except Exception:
-        logger.exception("Telegram search failed for query: %s", query)
+    for attempt in range(retries + 1):
+        try:
+            response = await client(SearchRequest(q=query, limit=limit))
+            for chat in response.chats:
+                if not isinstance(chat, Channel):
+                    continue
+                results.append(_parse_channel(chat))
+            return results
+        except FloodWaitError as e:
+            logger.warning("FloodWait: sleeping %d seconds", e.seconds)
+            await asyncio.sleep(e.seconds)
+        except Exception:
+            if attempt < retries:
+                logger.warning("Telegram search failed (attempt %d/%d), retrying: %s", attempt + 1, retries + 1, query)
+                await asyncio.sleep(2)
+            else:
+                logger.exception("Telegram search failed after %d attempts: %s", retries + 1, query)
 
     return results
 
@@ -104,15 +110,24 @@ async def get_last_message_date(chat: dict[str, Any]) -> datetime | None:
         await connect()
 
     chat_id = chat["telegram_chat_id"]
-    try:
-        peer = await client.get_entity(chat_id)
-        messages = await client.get_messages(peer, limit=1)
-        if messages and messages[0] and messages[0].date:
-            return messages[0].date.replace(tzinfo=timezone.utc)
-    except FloodWaitError as e:
-        logger.warning("FloodWait in get_last_message_date: sleeping %d seconds", e.seconds)
-        await asyncio.sleep(e.seconds)
-    except Exception:
-        logger.debug("Could not fetch last message for chat %s", chat_id)
+    for attempt in range(2):
+        try:
+            peer = await client.get_entity(chat_id)
+            messages = await client.get_messages(peer, limit=1)
+            if messages and messages[0] and messages[0].date:
+                return messages[0].date.replace(tzinfo=timezone.utc)
+            return None
+        except FloodWaitError as e:
+            logger.warning("FloodWait in get_last_message_date: sleeping %d seconds", e.seconds)
+            await asyncio.sleep(e.seconds)
+        except AuthKeyDuplicatedError:
+            logger.warning("AuthKeyDuplicated — reconnecting Telethon")
+            await client.disconnect()
+            await connect()
+        except Exception:
+            if attempt == 0:
+                await asyncio.sleep(1)
+            else:
+                logger.debug("Could not fetch last message for chat %s", chat_id)
 
     return None

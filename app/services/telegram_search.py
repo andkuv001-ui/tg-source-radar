@@ -99,11 +99,6 @@ def _parse_channel(chat: Channel) -> dict[str, Any]:
 
 
 async def get_last_message_date(chat: dict[str, Any]) -> datetime | None:
-    """Fetch the date of the most recent message in a chat.
-
-    Returns None if no message is found or on error.
-    Rate-limited with 0.5s sleep between calls.
-    """
     client = get_client()
     if not client.is_connected():
         await connect()
@@ -120,5 +115,4 @@ async def get_last_message_date(chat: dict[str, Any]) -> datetime | None:
     except Exception:
         logger.debug("Could not fetch last message for chat %s", chat_id)
 
-    await asyncio.sleep(0.5)
     return None

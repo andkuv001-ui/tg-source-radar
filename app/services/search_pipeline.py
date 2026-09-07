@@ -29,15 +29,14 @@ async def _pre_filter_chats(chats: list[dict]) -> list[dict]:
     """Pre-filter chats before LLM evaluation.
 
     Stage 1: Filter by participants count (free, in-memory).
-    Stage 2: Filter by activity (API call to get last message date).
+    Stage 2: Filter by activity (API call to get last message date, concurrent).
     """
     min_participants = settings.min_participants
     max_inactive_days = settings.max_inactive_days
     cutoff_date = datetime.now(timezone.utc) - timedelta(days=max_inactive_days)
 
-    filtered: list[dict] = []
+    pre_filtered: list[dict] = []
     skipped_participants = 0
-    skipped_inactive = 0
 
     for chat in chats:
         participants = chat.get("participants_count")
@@ -48,29 +47,34 @@ async def _pre_filter_chats(chats: list[dict]) -> list[dict]:
                 chat.get("title"), participants, min_participants,
             )
             continue
-
-        last_msg_date = await telegram_search.get_last_message_date(chat)
-        if last_msg_date is None:
-            logger.debug(
-                "Skipping %s: could not determine last message date",
-                chat.get("title"),
-            )
-            skipped_inactive += 1
-            continue
-
-        if last_msg_date < cutoff_date:
-            skipped_inactive += 1
-            logger.debug(
-                "Skipped %s: last message %s older than %d days",
-                chat.get("title"), last_msg_date.isoformat(), max_inactive_days,
-            )
-            continue
-
-        filtered.append(chat)
+        pre_filtered.append(chat)
 
     logger.info(
-        "Pre-filter: %d → %d chats (skipped %d low participants, %d inactive)",
-        len(chats), len(filtered), skipped_participants, skipped_inactive,
+        "Pre-filter (participants): %d → %d (skipped %d low participants)",
+        len(chats), len(pre_filtered), skipped_participants,
+    )
+
+    sem = asyncio.Semaphore(5)
+    skipped_inactive = 0
+    filtered: list[dict] = []
+
+    async def check_activity(chat: dict) -> bool:
+        async with sem:
+            last_msg_date = await telegram_search.get_last_message_date(chat)
+            if last_msg_date is None:
+                return False
+            return last_msg_date >= cutoff_date
+
+    results = await asyncio.gather(*[check_activity(c) for c in pre_filtered])
+    for chat, active in zip(pre_filtered, results):
+        if active:
+            filtered.append(chat)
+        else:
+            skipped_inactive += 1
+
+    logger.info(
+        "Pre-filter (activity): %d → %d (skipped %d inactive)",
+        len(pre_filtered), len(filtered), skipped_inactive,
     )
     return filtered
 
